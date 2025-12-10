@@ -1,60 +1,30 @@
-name: Build Android APK (Enhanced)
+name: Build Android APK
 
 on:
   push:
-    branches: [ main, master, develop ]
-    tags:
-      - 'v*'
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        python-version: ['3.11']
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
-
-    - name: Get build type
-      id: build_type
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "type=${{ github.event.inputs.build_type }}" >> $GITHUB_OUTPUT
-        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "type=release" >> $GITHUB_OUTPUT
-        else
-          echo "type=debug" >> $GITHUB_OUTPUT
-        fi
+        python-version: '3.11'
 
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip setuptools wheel
-        pip install buildozer
+        python -m pip install --upgrade pip
+        pip install buildozer==1.5.0
         pip install cython==0.29.33
-        pip install -r requirements.txt
 
     - name: Install system dependencies
       run: |
@@ -84,96 +54,77 @@ jobs:
           zip \
           unzip
 
-    - name: Setup ccache
-      uses: hendrikmuhs/ccache-action@v1.2
-      with:
-        key: ${{ runner.os }}-buildozer
-
     - name: Cache Buildozer global directory
       uses: actions/cache@v4
       with:
         path: .buildozer_global
-        key: buildozer-global-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-global-${{ runner.os }}-
+          buildozer-global-
 
     - name: Cache Buildozer directory
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-${{ runner.os }}-
+          buildozer-
+
+    - name: Setup Android SDK
+      run: |
+        # 创建 SDK licenses 目录
+        mkdir -p $HOME/.android/sdk/licenses
+        
+        # 接受所有 Android SDK 许可证
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $HOME/.android/sdk/licenses/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/sdk/licenses/android-sdk-license
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> $HOME/.android/sdk/licenses/android-sdk-license
+        
+        # 为 buildozer 创建许可证目录
+        mkdir -p $HOME/.buildozer/android/platform/android-sdk/licenses
+        cp -r $HOME/.android/sdk/licenses/* $HOME/.buildozer/android/platform/android-sdk/licenses/ || true
 
     - name: Build with Buildozer
       run: |
-        if [ "${{ steps.build_type.outputs.type }}" == "release" ]; then
-          buildozer android release
-        else
-          buildozer android debug
-        fi
+        # 使用 yes 自动接受所有提示
+        yes | buildozer -v android debug || buildozer -v android debug
       env:
         ANDROID_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
         JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        ANDROIDSDK: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+        ANDROIDNDK: ${{ github.workspace }}/.buildozer/android/platform/android-ndk
+        ANDROIDAPI: "31"
+        ANDROIDMINAPI: "21"
 
-    - name: Sign APK (Release only)
-      if: steps.build_type.outputs.type == 'release'
+    - name: List build output
+      if: always()
       run: |
-        echo "Release signing would go here"
-        # 如果有签名密钥，在这里添加签名步骤
-
-    - name: Get APK info
-      id: apk_info
-      run: |
-        APK_PATH=$(find bin -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-        echo "name=$APK_NAME" >> $GITHUB_OUTPUT
-        echo "size=$APK_SIZE" >> $GITHUB_OUTPUT
+        echo "=== Listing bin directory ==="
+        ls -la bin/ || echo "bin directory not found"
+        echo "=== Listing buildozer directory ==="
+        ls -la .buildozer/ || echo ".buildozer directory not found"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: item-tracker-${{ steps.build_type.outputs.type }}-${{ github.run_number }}
+        name: item-tracker-apk
         path: bin/*.apk
         if-no-files-found: error
         retention-days: 30
-        compression-level: 0  # APK 已经是压缩格式
 
-    - name: Create build summary
-      run: |
-        echo "## Build Summary 📱" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Type**: ${{ steps.build_type.outputs.type }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **APK Name**: ${{ steps.apk_info.outputs.name }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **APK Size**: ${{ steps.apk_info.outputs.size }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Python Version**: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Number**: ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+    - name: Upload build logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: buildozer-logs
+        path: .buildozer/android/platform/build-*/build.log
+        if-no-files-found: ignore
+        retention-days: 7
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
         files: bin/*.apk
-        generate_release_notes: true
-        draft: false
-        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Comment PR with APK info
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: '## 🎉 APK Build Successful!\n\n' +
-                  '- **APK Name**: ${{ steps.apk_info.outputs.name }}\n' +
-                  '- **APK Size**: ${{ steps.apk_info.outputs.size }}\n' +
-                  '- **Build Type**: ${{ steps.build_type.outputs.type }}\n\n' +
-                  'Download the APK from the [Actions artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-          })
