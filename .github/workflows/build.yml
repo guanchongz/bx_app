@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 可选：持久化 .buildozer，加快后续构建，也避免每次重下 SDK
+      # 可选：缓存 .buildozer 目录，加快后续构建
       - name: Prepare buildozer dir
         run: mkdir -p $HOME/.buildozer
 
@@ -26,7 +26,7 @@ jobs:
             -v ${{ github.workspace }}:/home/user/app \
             -v $HOME/.buildozer:/home/user/.buildozer \
             -w /home/user/app \
-            kivy/buildozer:stable \
+            kivy/buildozer:latest \
             -v android debug
 
       - name: Upload APK artifact
