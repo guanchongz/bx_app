@@ -16,19 +16,11 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Free Disk Space
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: false
-        android: false
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap-storage: true
-
-    - name: Check available space
       run: |
-        echo "Available space:"
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
         df -h
 
     - name: Set up Python
@@ -42,7 +34,13 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Install Python dependencies
+    - name: Verify Java installation
+      run: |
+        echo "JAVA_HOME: $JAVA_HOME"
+        java -version
+        which java
+
+    - name: Install Buildozer
       run: |
         python -m pip install --upgrade pip
         pip install buildozer==1.5.0
@@ -51,9 +49,11 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
+        sudo apt-get install -y --no-install-recommends \
           build-essential \
           git \
+          libffi-dev \
+          libssl-dev \
           libsdl2-dev \
           libsdl2-image-dev \
           libsdl2-mixer-dev \
@@ -62,31 +62,35 @@ jobs:
           autoconf \
           libtool \
           pkg-config \
+          zlib1g-dev \
           zip \
           unzip
+        sudo apt-get clean
 
-    - name: Cache Buildozer global directory
+    - name: Cache Buildozer
       uses: actions/cache@v4
       with:
-        path: .buildozer_global
-        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          buildozer-global-
-
-    - name: Cache Buildozer directory
-      uses: actions/cache@v4
-      with:
-        path: .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-v2
+        path: |
+          .buildozer
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           buildozer-
 
-    - name: Build with Buildozer (single architecture)
+    - name: Build with Buildozer
       run: |
+        # 确保使用正确的 Java 路径
+        export JAVA_HOME=${{ env.JAVA_HOME }}
+        export PATH=$JAVA_HOME/bin:$PATH
+        
+        # 显示环境信息
+        echo "Java version:"
+        java -version
+        echo "JAVA_HOME: $JAVA_HOME"
+        
+        # 构建
         buildozer -v android debug
       env:
-        ANDROID_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
-        JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        JAVA_HOME: ${{ env.JAVA_HOME }}
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -95,6 +99,15 @@ jobs:
         path: bin/*.apk
         if-no-files-found: error
         retention-days: 30
+
+    - name: Upload build logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: buildozer-logs
+        path: .buildozer/android/platform/build-*/build.log
+        if-no-files-found: ignore
+        retention-days: 7
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
