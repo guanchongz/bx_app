@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action-v1
+        uses: actions/setup-python@v4
         id: buildozer
         with:
           command: buildozer android debug
