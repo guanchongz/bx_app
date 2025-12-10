@@ -14,8 +14,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build with kivy/buildozer Docker image
+        env:
+          # 关键：禁止 root 警告，避免交互式输入
+          BUILDOZER_WARN_ON_ROOT: "0"
+          # 如果你希望双保险，也可以加这一行
+          # BUILDOZER_ALLOW_ROOT: "1"
         run: |
           docker run --rm \
+            -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
             -v ${{ github.workspace }}:/home/user/app \
             -w /home/user/app \
             kivy/buildozer \
