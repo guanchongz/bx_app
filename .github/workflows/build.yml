@@ -1,39 +1,41 @@
-name: Build Android APK
+name: Build APK
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-20.04
+    
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
-
-    - name: Build with Buildozer
-      uses: ArtemSBulgakov/buildozer-action@v1
-      id: buildozer
+    
+    - name: Free space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h
+    
+    - name: Setup
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-11-jdk build-essential git zip unzip
+        pip3 install --upgrade pip
+        pip3 install buildozer cython==0.29.33
+        echo "JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> $GITHUB_ENV
+    
+    - name: Cache
+      uses: actions/cache@v4
       with:
-        command: buildozer android debug
-        buildozer_version: stable
-
-    - name: Upload APK
+        path: .buildozer
+        key: buildozer-${{ hashFiles('buildozer.spec') }}
+    
+    - name: Build
+      run: buildozer android debug
+    
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: item-tracker-apk
-        path: ${{ steps.buildozer.outputs.filename }}
-        if-no-files-found: error
-        retention-days: 30
-
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: ${{ steps.buildozer.outputs.filename }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: apk
+        path: bin/*.apk
