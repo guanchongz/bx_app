@@ -13,8 +13,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. 在容器里接受 license 并安装指定版本的 SDK 组件
-      - name: Accept Android SDK licenses and install SDK components
+      # 预创建一个在宿主上的 .buildozer 目录，用来持久化 SDK
+      - name: Prepare buildozer dir
+        run: mkdir -p $HOME/.buildozer
+
+      # 1) 在 buildozer 的 SDK 根目录下接受 license 并安装 36.1.0
+      - name: Accept Android SDK licenses and install build-tools 36.1.0
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
         run: |
@@ -22,11 +26,26 @@ jobs:
             --entrypoint bash \
             -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
             -v ${{ github.workspace }}:/home/user/app \
+            -v $HOME/.buildozer:/home/user/.buildozer \
             -w /home/user/app \
             kivy/buildozer \
-            -c "yes | sdkmanager --licenses && yes | sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' || true"
+            -c "
+              # 若 SDK 还没装好，先让 buildozer 初始化一次（可能失败但会创建目录）
+              buildozer android debug || true;
 
-      # 2. 使用 buildozer 构建 APK（debug）
+              SDK_ROOT=/home/user/.buildozer/android/platform/android-sdk
+
+              # 确保 sdkmanager 存在
+              if [ -x \"\$SDK_ROOT/tools/bin/sdkmanager\" ]; then
+                  yes | \$SDK_ROOT/tools/bin/sdkmanager --sdk_root=\$SDK_ROOT --licenses || true
+                  yes | \$SDK_ROOT/tools/bin/sdkmanager --sdk_root=\$SDK_ROOT 'build-tools;36.1.0' || true
+              else
+                  echo 'sdkmanager not found at' \$SDK_ROOT/tools/bin/sdkmanager;
+                  exit 1;
+              fi
+            "
+
+      # 2) 使用同一个 .buildozer 目录，真正构建 APK
       - name: Build with kivy/buildozer Docker image
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
@@ -34,6 +53,7 @@ jobs:
           docker run --rm \
             -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
             -v ${{ github.workspace }}:/home/user/app \
+            -v $HOME/.buildozer:/home/user/.buildozer \
             -w /home/user/app \
             kivy/buildozer \
             -v android debug
