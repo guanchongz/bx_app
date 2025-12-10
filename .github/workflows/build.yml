@@ -1,0 +1,52 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python (for some helper scripts if needed)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            git \
+            zip \
+            unzip \
+            openjdk-17-jdk
+
+      - name: Install buildozer
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython virtualenv
+
+      - name: Buildozer init check
+        run: |
+          if [ ! -f buildozer.spec ]; then
+            buildozer init
+          fi
+
+      - name: Build APK (debug)
+        env:
+          BUILDOZER_WARN_ON_ROOT: 1
+        run: |
+          buildozer -v android debug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: bin/*.apk
