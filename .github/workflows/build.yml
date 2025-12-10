@@ -2,35 +2,87 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      # 可选：缓存 .buildozer 目录，加快后续构建
-      - name: Prepare buildozer dir
-        run: mkdir -p $HOME/.buildozer
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
 
-      - name: Build with kivy/buildozer Docker image
-        env:
-          BUILDOZER_WARN_ON_ROOT: "0"
-        run: |
-          docker run --rm \
-            -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
-            -v ${{ github.workspace }}:/home/user/app \
-            -v $HOME/.buildozer:/home/user/.buildozer \
-            -w /home/user/app \
-            kivy/buildozer:latest \
-            -v android debug
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install buildozer
+        pip install cython==0.29.33
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: bin/*.apk
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          ffmpeg \
+          libsdl2-dev \
+          libsdl2-image-dev \
+          libsdl2-mixer-dev \
+          libsdl2-ttf-dev \
+          libportmidi-dev \
+          libswscale-dev \
+          libavformat-dev \
+          libavcodec-dev \
+          zlib1g-dev \
+          libgstreamer1.0-dev \
+          gstreamer1.0-plugins-base \
+          gstreamer1.0-plugins-good \
+          libgstreamer-plugins-base1.0-dev \
+          ccache \
+          openjdk-17-jdk \
+          autoconf \
+          libtool \
+          pkg-config \
+          zip \
+          unzip
+
+    - name: Cache Buildozer global directory
+      uses: actions/cache@v3
+      with:
+        path: .buildozer_global
+        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+
+    - name: Cache Buildozer directory
+      uses: actions/cache@v3
+      with:
+        path: .buildozer
+        key: buildozer-${{ hashFiles('buildozer.spec') }}
+
+    - name: Build with Buildozer
+      run: |
+        buildozer android debug
+      env:
+        ANDROID_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+        JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: item-tracker-apk
+        path: bin/*.apk
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: bin/*.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
