@@ -21,8 +21,8 @@ version = 1.0.0
 # 应用需要的权限
 android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,INTERNET
 
-# 支持的架构
-android.archs = arm64-v8a, armeabi-v7a
+# 只构建 arm64-v8a 架构（节省空间和时间）
+android.archs = arm64-v8a
 
 # Python 依赖
 requirements = python3,kivy==2.2.1,pillow,plyer,android
@@ -33,9 +33,6 @@ android.minapi = 21
 
 # NDK 版本
 android.ndk = 25b
-
-# SDK 构建工具版本（重要！）
-android.sdk_build_tools = 30.0.3
 
 # 自动接受 SDK 许可证
 android.accept_sdk_license = True
@@ -52,14 +49,8 @@ android.entrypoint = org.kivy.android.PythonActivity
 # Android app theme
 android.apptheme = "@android:style/Theme.NoTitleBar"
 
-# 跳过更新（加快构建速度）
-android.skip_update = False
-
 # 日志级别
 log_level = 2
-
-# 警告级别
-warn_on_root = 1
 
 [buildozer]
 

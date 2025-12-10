@@ -15,6 +15,22 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Free Disk Space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: false
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: Check available space
+      run: |
+        echo "Available space:"
+        df -h
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -25,9 +41,6 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '17'
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
 
     - name: Install Python dependencies
       run: |
@@ -41,40 +54,16 @@ jobs:
         sudo apt-get install -y \
           build-essential \
           git \
-          ffmpeg \
           libsdl2-dev \
           libsdl2-image-dev \
           libsdl2-mixer-dev \
           libsdl2-ttf-dev \
-          libportmidi-dev \
-          libswscale-dev \
-          libavformat-dev \
-          libavcodec-dev \
-          zlib1g-dev \
           ccache \
           autoconf \
           libtool \
           pkg-config \
           zip \
           unzip
-
-    - name: Accept Android licenses
-      run: |
-        yes | sdkmanager --licenses || true
-        sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3"
-
-    - name: Setup Buildozer Android SDK
-      run: |
-        # 创建 buildozer 的 SDK 目录
-        mkdir -p $HOME/.buildozer/android/platform/android-sdk
-        
-        # 复制系统 Android SDK 到 buildozer 目录
-        cp -r $ANDROID_SDK_ROOT/* $HOME/.buildozer/android/platform/android-sdk/ || true
-        
-        # 创建 tools/bin 目录和符号链接
-        mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
-        ln -sf $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager || true
-        ln -sf $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/avdmanager || true
 
     - name: Cache Buildozer global directory
       uses: actions/cache@v4
@@ -88,16 +77,16 @@ jobs:
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v2
         restore-keys: |
           buildozer-
 
-    - name: Build with Buildozer
+    - name: Build with Buildozer (single architecture)
       run: |
         buildozer -v android debug
       env:
-        ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
-        ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        ANDROID_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+        JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -106,16 +95,6 @@ jobs:
         path: bin/*.apk
         if-no-files-found: error
         retention-days: 30
-
-    - name: Upload build logs
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: buildozer-logs
-        path: |
-          .buildozer/android/platform/build-*/build.log
-        if-no-files-found: ignore
-        retention-days: 7
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
