@@ -450,3 +450,9 @@ warn_on_root = 1
 #    Then, invoke the command line with the "demo" profile:
 #
 #buildozer --profile demo android debug
+[app_android]
+android.api = 34
+android.minapi = 21
+android.sdk = 34
+android.ndk = 25b
+android.arch = armeabi-v7a, arm64-v8a

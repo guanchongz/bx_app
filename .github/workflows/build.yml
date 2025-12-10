@@ -13,8 +13,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. 在容器里先接受 Android SDK license，并可选安装指定的 build-tools
-      - name: Accept Android SDK licenses
+      # 1. 在容器里接受 license 并安装指定版本的 SDK 组件
+      - name: Accept Android SDK licenses and install SDK components
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
         run: |
@@ -24,9 +24,9 @@ jobs:
             -v ${{ github.workspace }}:/home/user/app \
             -w /home/user/app \
             kivy/buildozer \
-            -c "yes | sdkmanager --licenses || true"
+            -c "yes | sdkmanager --licenses && yes | sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' || true"
 
-      # 2. 构建 APK（debug）
+      # 2. 使用 buildozer 构建 APK（debug）
       - name: Build with kivy/buildozer Docker image
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
