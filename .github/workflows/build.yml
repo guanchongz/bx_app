@@ -13,61 +13,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 在宿主上准备一个 .buildozer 目录，用来持久化 /root/.buildozer
+      # 可选：持久化 .buildozer，加快后续构建，也避免每次重下 SDK
       - name: Prepare buildozer dir
         run: mkdir -p $HOME/.buildozer
 
-      # 1) 初始化一次 buildozer，让它下载 SDK（即使失败也没关系）
-      - name: Initialize buildozer (download SDK)
-        env:
-          BUILDOZER_WARN_ON_ROOT: "0"
-        run: |
-          docker run --rm \
-            -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
-            -v ${{ github.workspace }}:/home/user/app \
-            -v $HOME/.buildozer:/root/.buildozer \
-            -w /home/user/app \
-            kivy/buildozer \
-            android debug || true
-
-      # 2) 在 /root/.buildozer 的 SDK 上接受 license 并安装 build-tools;36.1.0
-      - name: Accept Android SDK licenses and install build-tools 36.1.0
-        env:
-          BUILDOZER_WARN_ON_ROOT: "0"
-        run: |
-          docker run --rm \
-            --entrypoint bash \
-            -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
-            -v ${{ github.workspace }}:/home/user/app \
-            -v $HOME/.buildozer:/root/.buildozer \
-            -w /home/user/app \
-            kivy/buildozer \
-            -c '
-              SDK_ROOT=/root/.buildozer/android/platform/android-sdk
-
-              echo "SDK_ROOT is $SDK_ROOT"
-
-              # 尝试在 cmdline-tools 下寻找 sdkmanager（新结构）
-              if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-                  SDKMAN="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-              elif [ -x "$SDK_ROOT/cmdline-tools/bin/sdkmanager" ]; then
-                  SDKMAN="$SDK_ROOT/cmdline-tools/bin/sdkmanager"
-              elif [ -x "$SDK_ROOT/tools/bin/sdkmanager" ]; then
-                  # 兼容旧结构
-                  SDKMAN="$SDK_ROOT/tools/bin/sdkmanager"
-              else
-                  echo "sdkmanager not found under $SDK_ROOT"
-                  find "$SDK_ROOT" -maxdepth 4 -type f -name sdkmanager || true
-                  exit 1
-              fi
-
-              echo "Using sdkmanager at $SDKMAN"
-
-              yes | "$SDKMAN" --sdk_root="$SDK_ROOT" --licenses || true
-              yes | "$SDKMAN" --sdk_root="$SDK_ROOT" "build-tools;36.1.0" || true
-            '
-
-      # 3) 使用同一个 /root/.buildozer 再构建一次（这次应该不会再卡 license）
       - name: Build with kivy/buildozer Docker image
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
@@ -75,9 +24,9 @@ jobs:
           docker run --rm \
             -e BUILDOZER_WARN_ON_ROOT=${BUILDOZER_WARN_ON_ROOT} \
             -v ${{ github.workspace }}:/home/user/app \
-            -v $HOME/.buildozer:/root/.buildozer \
+            -v $HOME/.buildozer:/home/user/.buildozer \
             -w /home/user/app \
-            kivy/buildozer \
+            kivy/buildozer:stable \
             -v android debug
 
       - name: Upload APK artifact

@@ -451,8 +451,8 @@ warn_on_root = 1
 #
 #buildozer --profile demo android debug
 [app_android]
-android.api = 36
-android.sdk = 36
+android.api = 34
 android.minapi = 21
+android.sdk = 34
 android.ndk = 25b
 android.arch = armeabi-v7a, arm64-v8a
