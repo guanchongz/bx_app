@@ -5,7 +5,7 @@ package.name = itemtracker
 package.domain = org.example
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json,ttf
+source.include_exts = py,png,jpg,kv,atlas,json,ttf,jpeg,xml,java
 
 version = 1.0
 
@@ -26,22 +26,15 @@ fullscreen = 0
 
 android.entrypoint = org.kivy.android.PythonActivity
 android.apptheme = @android:style/Theme.NoTitleBar
-
 # 添加 FileProvider 支持
 android.add_src = java
 
 # Gradle 依赖
 android.gradle_dependencies = androidx.core:core:1.6.0
-android.manifest.application = """
-<provider
-    android:name="androidx.core.content.FileProvider"
-    android:authorities="org.example.itemtracker.fileprovider"
-    android:exported="false"
-    android:grantUriPermissions="true">
-    <meta-data
-        android:name="android.support.FILE_PROVIDER_PATHS"
-        android:resource="@xml/file_paths" />
-</provider>
+android.enable_androidx = True
+
+# 使用外部 XML 文件
+android.extra_manifest_application_arguments = ./android_manifest_application.xml
 """
 
 [buildozer]
