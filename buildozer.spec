@@ -16,7 +16,7 @@ android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
 android.archs = arm64-v8a
 
-android.api = 33
+android.api = 31
 android.minapi = 21
 android.ndk = 25b
 android.accept_sdk_license = True
