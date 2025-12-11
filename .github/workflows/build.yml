@@ -25,12 +25,31 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android SDK API 33 and NDK
+      run: |
+        echo "=== Installing Android SDK components ==="
+        sdkmanager --list | grep -E "platforms|build-tools|ndk" | head -20
+        echo "=== Installing required components ==="
+        yes | sdkmanager --licenses || true
+        sdkmanager --install "platforms;android-33"
+        sdkmanager --install "build-tools;33.0.2"
+        sdkmanager --install "ndk;25.2.9519653"
+        echo "=== Installed components ==="
+        sdkmanager --list_installed
+        echo "=== SDK location ==="
+        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        ls -la $ANDROID_SDK_ROOT/platforms/ || true
+        ls -la $ANDROID_SDK_ROOT/ndk/ || true
+
     - name: Maximize build space
       run: |
         echo "=== Before cleanup ==="
         df -h
         sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
         sudo rm -rf /usr/local/share/boost
@@ -78,22 +97,19 @@ jobs:
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-java17-v1
+        key: buildozer-api33-ndk25b-${{ hashFiles('buildozer.spec') }}-v2
         restore-keys: |
-          buildozer-java17-
-
-    - name: Cache Buildozer (with NDK 25b)
-      uses: actions/cache@v4
-      with:
-        path: .buildozer
-        key: buildozer-ndk25b-api33-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          buildozer-ndk25b-api33-
+          buildozer-api33-ndk25b-
 
     - name: Build APK
       run: |
         export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m"
+        export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
+        export ANDROID_HOME=$ANDROID_HOME
         buildozer -v android debug
+      env:
+        ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        ANDROID_HOME: /usr/local/lib/android/sdk
 
     - name: Check disk space after build
       if: always()
