@@ -27,7 +27,7 @@ jobs:
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
+        sudo docker image prune --all --force || true
         echo "=== After cleanup ==="
         df -h
 
@@ -48,7 +48,6 @@ jobs:
           zlib1g-dev \
           libncurses5-dev \
           libncursesw5-dev \
-          libtinfo5 \
           cmake \
           libffi-dev \
           libssl-dev \
@@ -85,9 +84,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-v2
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v3
         restore-keys: |
-          buildozer-v2-
+          buildozer-v3-
 
     - name: Build APK
       run: |
