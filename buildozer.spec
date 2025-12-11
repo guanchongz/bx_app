@@ -5,11 +5,12 @@ package.name = itemtracker
 package.domain = org.example
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json
+source.include_exts = py,png,jpg,kv,atlas,json,ttf
 
 version = 1.0
 
-requirements = python3,kivy==2.1.0,pillow,plyer,android
+# 添加 pyjnius 用于 Android API 调用
+requirements = python3,kivy==2.1.0,pillow,plyer,android,pyjnius
 
 android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
@@ -25,6 +26,23 @@ fullscreen = 0
 
 android.entrypoint = org.kivy.android.PythonActivity
 android.apptheme = @android:style/Theme.NoTitleBar
+
+# 添加 FileProvider 支持
+android.add_src = java
+
+# Gradle 依赖
+android.gradle_dependencies = androidx.core:core:1.6.0
+android.manifest.application = """
+<provider
+    android:name="androidx.core.content.FileProvider"
+    android:authorities="org.example.itemtracker.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+</provider>
+"""
 
 [buildozer]
 
