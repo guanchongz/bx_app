@@ -12,9 +12,17 @@ import json
 import os
 from datetime import datetime
 
+# Android 权限请求
 if platform == 'android':
-    from android.permissions import request_permissions, Permission
-    request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
+    try:
+        from android.permissions import request_permissions, Permission
+        request_permissions([
+            Permission.CAMERA,
+            Permission.WRITE_EXTERNAL_STORAGE,
+            Permission.READ_EXTERNAL_STORAGE
+        ])
+    except Exception as e:
+        print(f"权限请求失败: {e}")
 
 
 class ItemCard(BoxLayout):
@@ -31,23 +39,42 @@ class ItemCard(BoxLayout):
         self.delete_callback = delete_callback
         
         # 图片
-        img = Image(source=item_data['image_path'], size_hint_x=0.3)
+        try:
+            img = Image(
+                source=item_data['image_path'],
+                size_hint_x=0.3,
+                allow_stretch=True,
+                keep_ratio=True
+            )
+        except Exception as e:
+            print(f"加载图片失败: {e}")
+            img = Label(text='[图片]', size_hint_x=0.3)
+        
         self.add_widget(img)
         
         # 信息区域
         info_layout = BoxLayout(orientation='vertical', size_hint_x=0.5)
-        info_layout.add_widget(Label(
+        
+        time_label = Label(
             text=f"时间: {item_data['timestamp']}", 
             size_hint_y=0.5,
             halign='left',
-            valign='middle'
-        ))
-        info_layout.add_widget(Label(
+            valign='middle',
+            text_size=(None, None)
+        )
+        time_label.bind(size=time_label.setter('text_size'))
+        
+        id_label = Label(
             text=f"ID: {item_data['id'][:8]}", 
             size_hint_y=0.5,
             halign='left',
-            valign='middle'
-        ))
+            valign='middle',
+            text_size=(None, None)
+        )
+        id_label.bind(size=id_label.setter('text_size'))
+        
+        info_layout.add_widget(time_label)
+        info_layout.add_widget(id_label)
         self.add_widget(info_layout)
         
         # 删除按钮
@@ -66,7 +93,12 @@ class ItemCard(BoxLayout):
         
         btn_layout = BoxLayout(size_hint_y=0.3, spacing=10)
         
-        popup = Popup(title='确认删除', content=content, size_hint=(0.8, 0.4))
+        popup = Popup(
+            title='确认删除',
+            content=content,
+            size_hint=(0.8, 0.4),
+            auto_dismiss=False
+        )
         
         confirm_btn = Button(text='确定', background_color=(1, 0.3, 0.3, 1))
         cancel_btn = Button(text='取消')
@@ -96,18 +128,7 @@ class ItemTrackerApp(App):
     def build(self):
         """构建应用界面"""
         # 设置数据存储路径
-        if platform == 'android':
-            from android.storage import app_storage_path
-            self.data_dir = app_storage_path()
-        else:
-            self.data_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        self.data_file = os.path.join(self.data_dir, 'items_data.json')
-        self.images_dir = os.path.join(self.data_dir, 'item_images')
-        
-        # 创建图片目录
-        if not os.path.exists(self.images_dir):
-            os.makedirs(self.images_dir)
+        self.setup_storage()
         
         # 加载数据
         self.load_data()
@@ -119,17 +140,17 @@ class ItemTrackerApp(App):
         top_layout = BoxLayout(size_hint_y=0.1, padding=10, spacing=10)
         
         camera_btn = Button(
-            text='📷 拍照记录',
+            text='拍照记录',
             background_color=(0.2, 0.6, 1, 1),
-            font_size='20sp'
+            font_size='18sp'
         )
         camera_btn.bind(on_press=self.take_photo)
         
         refresh_btn = Button(
-            text='🔄 刷新',
+            text='刷新',
             background_color=(0.3, 0.7, 0.3, 1),
             size_hint_x=0.3,
-            font_size='20sp'
+            font_size='18sp'
         )
         refresh_btn.bind(on_press=self.refresh_list)
         
@@ -140,7 +161,12 @@ class ItemTrackerApp(App):
         
         # 物品列表
         self.scroll_view = ScrollView(size_hint=(1, 0.9))
-        self.items_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=10)
+        self.items_layout = GridLayout(
+            cols=1,
+            spacing=10,
+            size_hint_y=None,
+            padding=10
+        )
         self.items_layout.bind(minimum_height=self.items_layout.setter('height'))
         
         self.scroll_view.add_widget(self.items_layout)
@@ -151,26 +177,85 @@ class ItemTrackerApp(App):
         
         return main_layout
     
+    def setup_storage(self):
+        """设置存储路径"""
+        if platform == 'android':
+            try:
+                from android.storage import app_storage_path
+                self.data_dir = app_storage_path()
+            except Exception as e:
+                print(f"获取存储路径失败: {e}")
+                self.data_dir = '/sdcard/ItemTracker'
+        else:
+            self.data_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        self.data_file = os.path.join(self.data_dir, 'items_data.json')
+        self.images_dir = os.path.join(self.data_dir, 'item_images')
+        
+        # 创建目录
+        try:
+            if not os.path.exists(self.images_dir):
+                os.makedirs(self.images_dir)
+        except Exception as e:
+            print(f"创建目录失败: {e}")
+    
     def take_photo(self, instance):
         """拍照功能"""
         if platform == 'android':
-            from plyer import camera
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filepath = os.path.join(self.images_dir, f'item_{timestamp}.jpg')
-            
             try:
-                camera.take_picture(filename=filepath, on_complete=self.on_photo_complete)
+                from plyer import camera
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filepath = os.path.join(self.images_dir, f'item_{timestamp}.jpg')
+                
+                camera.take_picture(
+                    filename=filepath,
+                    on_complete=self.on_photo_complete
+                )
             except Exception as e:
                 self.show_message('错误', f'拍照失败: {str(e)}')
         else:
-            # 桌面测试：创建一个占位图片
+            # 桌面测试
             self.create_test_item()
     
     def on_photo_complete(self, filepath):
         """拍照完成回调"""
-        if filepath and os.path.exists(filepath):
+        try:
+            if filepath and os.path.exists(filepath):
+                item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                item = {
+                    'id': item_id,
+                    'image_path': filepath,
+                    'timestamp': timestamp
+                }
+                
+                self.items.append(item)
+                self.save_data()
+                self.display_items()
+                self.show_message('成功', '物品已记录！')
+            else:
+                self.show_message('提示', '拍照已取消')
+        except Exception as e:
+            self.show_message('错误', f'保存失败: {str(e)}')
+    
+    def create_test_item(self):
+        """创建测试物品（用于桌面测试）"""
+        try:
             item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            filepath = os.path.join(self.images_dir, f'item_{item_id}.jpg')
+            
+            # 创建占位图片
+            try:
+                from PIL import Image as PILImage
+                img = PILImage.new('RGB', (300, 300), color=(73, 109, 137))
+                img.save(filepath)
+            except:
+                # 创建空文件
+                with open(filepath, 'w') as f:
+                    f.write('')
             
             item = {
                 'id': item_id,
@@ -181,86 +266,74 @@ class ItemTrackerApp(App):
             self.items.append(item)
             self.save_data()
             self.display_items()
-            self.show_message('成功', '物品已记录！')
-        else:
-            self.show_message('错误', '拍照失败或已取消')
-    
-    def create_test_item(self):
-        """创建测试物品（用于桌面测试）"""
-        item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        # 创建一个简单的占位图片路径
-        filepath = os.path.join(self.images_dir, f'item_{item_id}.jpg')
-        
-        # 创建一个空白图片文件（实际应用中会是真实照片）
-        try:
-            from PIL import Image as PILImage
-            img = PILImage.new('RGB', (300, 300), color=(73, 109, 137))
-            img.save(filepath)
-        except:
-            # 如果PIL不可用，创建空文件
-            with open(filepath, 'w') as f:
-                f.write('')
-        
-        item = {
-            'id': item_id,
-            'image_path': filepath,
-            'timestamp': timestamp
-        }
-        
-        self.items.append(item)
-        self.save_data()
-        self.display_items()
-        self.show_message('成功', '测试物品已添加！')
+            self.show_message('成功', '测试物品已添加！')
+        except Exception as e:
+            self.show_message('错误', f'添加失败: {str(e)}')
     
     def display_items(self):
         """显示物品列表"""
         self.items_layout.clear_widgets()
         
         if not self.items:
-            self.items_layout.add_widget(Label(
+            empty_label = Label(
                 text='暂无记录\n点击"拍照记录"添加物品',
                 size_hint_y=None,
-                height=100
-            ))
+                height=100,
+                halign='center',
+                valign='middle'
+            )
+            empty_label.bind(size=empty_label.setter('text_size'))
+            self.items_layout.add_widget(empty_label)
             return
         
         # 按时间倒序排序
-        sorted_items = sorted(self.items, key=lambda x: x['timestamp'], reverse=True)
+        sorted_items = sorted(
+            self.items,
+            key=lambda x: x['timestamp'],
+            reverse=True
+        )
         
         for item in sorted_items:
-            if os.path.exists(item['image_path']):
-                card = ItemCard(item, self.delete_item)
-                self.items_layout.add_widget(card)
+            try:
+                if os.path.exists(item['image_path']):
+                    card = ItemCard(item, self.delete_item)
+                    self.items_layout.add_widget(card)
+            except Exception as e:
+                print(f"显示物品卡片失败: {e}")
     
     def delete_item(self, item_id):
         """删除物品"""
-        item_to_delete = None
-        for item in self.items:
-            if item['id'] == item_id:
-                item_to_delete = item
-                break
-        
-        if item_to_delete:
-            # 删除图片文件
-            if os.path.exists(item_to_delete['image_path']):
-                try:
-                    os.remove(item_to_delete['image_path'])
-                except Exception as e:
-                    print(f"删除图片失败: {e}")
+        try:
+            item_to_delete = None
+            for item in self.items:
+                if item['id'] == item_id:
+                    item_to_delete = item
+                    break
             
-            # 从列表中移除
-            self.items.remove(item_to_delete)
-            self.save_data()
-            self.display_items()
-            self.show_message('成功', '物品已删除！')
+            if item_to_delete:
+                # 删除图片文件
+                if os.path.exists(item_to_delete['image_path']):
+                    try:
+                        os.remove(item_to_delete['image_path'])
+                    except Exception as e:
+                        print(f"删除图片失败: {e}")
+                
+                # 从列表中移除
+                self.items.remove(item_to_delete)
+                self.save_data()
+                self.display_items()
+                self.show_message('成功', '物品已删除！')
+        except Exception as e:
+            self.show_message('错误', f'删除失败: {str(e)}')
     
     def refresh_list(self, instance):
         """刷新列表"""
-        self.load_data()
-        self.display_items()
-        self.show_message('提示', '列表已刷新！')
+        try:
+            self.load_data()
+            self.display_items()
+            self.show_message('提示', '列表已刷新！')
+        except Exception as e:
+            self.show_message('错误', f'刷新失败: {str(e)}')
     
     def load_data(self):
         """加载数据"""
@@ -285,12 +358,15 @@ class ItemTrackerApp(App):
     def show_message(self, title, message):
         """显示消息提示"""
         content = BoxLayout(orientation='vertical', padding=10)
-        content.add_widget(Label(text=message))
+        msg_label = Label(text=message, halign='center', valign='middle')
+        msg_label.bind(size=msg_label.setter('text_size'))
+        content.add_widget(msg_label)
         
         popup = Popup(
             title=title,
             content=content,
-            size_hint=(0.8, 0.3)
+            size_hint=(0.8, 0.3),
+            auto_dismiss=False
         )
         
         close_btn = Button(text='关闭', size_hint_y=0.3)
