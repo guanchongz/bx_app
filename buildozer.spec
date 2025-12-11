@@ -12,7 +12,7 @@ source.include_exts = py,png,jpg,kv,atlas,json
 # 版本
 version = 1.0.0
 
-# 依赖（重要：只包含必要的）
+# Python 依赖
 requirements = python3,kivy==2.2.1,pillow,plyer,android
 
 # 权限
@@ -31,8 +31,16 @@ android.accept_sdk_license = True
 orientation = portrait
 fullscreen = 0
 
+# Android entry point
+android.entrypoint = org.kivy.android.PythonActivity
+
+# Android app theme
+android.apptheme = "@android:style/Theme.NoTitleBar"
+
 [buildozer]
 
 # 日志级别
 log_level = 2
+
+# 警告
 warn_on_root = 1
