@@ -19,7 +19,7 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Free Disk Space
+    - name: Maximize build space
       run: |
         echo "=== Before cleanup ==="
         df -h
@@ -27,7 +27,10 @@ jobs:
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force || true
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo docker image prune --all --force
+        sudo apt-get clean
         echo "=== After cleanup ==="
         df -h
 
@@ -72,35 +75,32 @@ jobs:
         pip install buildozer==1.5.0
         pip install cython==0.29.33
 
-    - name: Cache Buildozer global directory
-      uses: actions/cache@v4
-      with:
-        path: .buildozer_global
-        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          buildozer-global-
-
     - name: Cache Buildozer directory
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-v3
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v4
         restore-keys: |
-          buildozer-v3-
+          buildozer-v4-
 
     - name: Build APK
       run: |
-        buildozer android debug
+        # 设置 Gradle 选项以减少内存使用
+        export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m"
+        buildozer -v android debug
       env:
         JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
+
+    - name: Check disk space after build
+      if: always()
+      run: df -h
 
     - name: List build output
       if: always()
       run: |
         echo "=== Build output ==="
         ls -lh bin/ || echo "No bin directory"
-        echo "=== Disk usage ==="
-        df -h
+        find .buildozer -name "*.apk" || echo "No APK found"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -117,6 +117,7 @@ jobs:
         name: buildozer-logs
         path: |
           .buildozer/android/platform/build-*/build.log
+          .buildozer/android/platform/build-*/dists/*/build.log
         if-no-files-found: ignore
         retention-days: 7
 
