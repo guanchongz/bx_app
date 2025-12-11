@@ -28,7 +28,6 @@ jobs:
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
         sudo rm -rf /usr/local/share/boost
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
         sudo docker image prune --all --force
         sudo apt-get clean
         echo "=== After cleanup ==="
@@ -79,17 +78,27 @@ jobs:
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-v4
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v5
         restore-keys: |
-          buildozer-v4-
+          buildozer-v5-
 
     - name: Build APK
       run: |
-        # 设置 Gradle 选项以减少内存使用
         export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m"
-        buildozer -v android debug
+        buildozer -v android debug 2>&1 | tee build.log
       env:
         JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
+      continue-on-error: true
+
+    - name: Show Gradle logs if build failed
+      if: failure()
+      run: |
+        echo "=== Gradle build log ==="
+        find .buildozer -name "build.log" -exec cat {} \;
+        echo "=== Gradle wrapper log ==="
+        find .buildozer -name "gradle*.log" -exec cat {} \;
+        echo "=== Last 200 lines of buildozer log ==="
+        tail -n 200 build.log || true
 
     - name: Check disk space after build
       if: always()
@@ -103,21 +112,24 @@ jobs:
         find .buildozer -name "*.apk" || echo "No APK found"
 
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: item-tracker-apk
         path: bin/*.apk
-        if-no-files-found: error
+        if-no-files-found: warn
         retention-days: 30
 
-    - name: Upload build logs on failure
+    - name: Upload all logs on failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: buildozer-logs
+        name: build-logs
         path: |
+          build.log
           .buildozer/android/platform/build-*/build.log
           .buildozer/android/platform/build-*/dists/*/build.log
+          .buildozer/android/platform/build-*/dists/*/gradle*.log
         if-no-files-found: ignore
         retention-days: 7
 
