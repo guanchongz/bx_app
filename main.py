@@ -55,6 +55,7 @@ if platform == 'android':
         FileOutputStream = autoclass('java.io.FileOutputStream')
         ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
         CompressFormat = autoclass('android.graphics.Bitmap$CompressFormat')
+        Environment = autoclass('android.os.Environment')
         
         Logger.info("App: Android modules loaded successfully")
     except Exception as e:
@@ -176,14 +177,22 @@ class ItemCard(BoxLayout):
             Logger.error(f"ItemCard: Failed to delete item: {e}")
 
 
+# 全局变量用于存储 app 实例
+_app_instance = None
+
+
 class ItemTrackerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        global _app_instance
+        _app_instance = self
+        
         self.data_file = None
         self.images_dir = None
         self.items = []
         self.current_photo_path = None
         self._activity_result_listener = None
+        self.callback_count = 0
         Logger.info("App: ItemTrackerApp initialized")
     
     def build(self):
@@ -211,6 +220,16 @@ class ItemTrackerApp(App):
             )
             camera_btn.bind(on_press=self.take_photo)
             
+            # 添加测试按钮
+            test_btn = Button(
+                text='Test',
+                background_color=(0.8, 0.5, 0.2, 1),
+                size_hint_x=0.3,
+                font_size='18sp',
+                font_name='Roboto'
+            )
+            test_btn.bind(on_press=self.test_callback)
+            
             refresh_btn = Button(
                 text='Refresh',
                 background_color=(0.3, 0.7, 0.3, 1),
@@ -221,6 +240,7 @@ class ItemTrackerApp(App):
             refresh_btn.bind(on_press=self.refresh_list)
             
             top_layout.add_widget(camera_btn)
+            top_layout.add_widget(test_btn)
             top_layout.add_widget(refresh_btn)
             
             main_layout.add_widget(top_layout)
@@ -257,6 +277,25 @@ class ItemTrackerApp(App):
             error_label.bind(size=error_label.setter('text_size'))
             error_layout.add_widget(error_label)
             return error_layout
+    
+    def test_callback(self, instance):
+        """测试回调是否工作"""
+        try:
+            Logger.info("App: Test button pressed")
+            self.callback_count += 1
+            
+            # 模拟拍照回调
+            if platform == 'android':
+                Logger.info("App: Simulating camera callback")
+                self.on_activity_result(1001, -1, None)
+            else:
+                self.create_test_item()
+            
+            self.show_message('Test', f'Callback test #{self.callback_count}')
+        except Exception as e:
+            Logger.error(f"App: Test failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     def setup_storage(self):
         """设置存储路径"""
@@ -303,22 +342,39 @@ class ItemTrackerApp(App):
         try:
             Logger.info("App: Setting up activity listener")
             
+            # 使用全局函数作为回调
+            def global_callback(request_code, result_code, intent):
+                Logger.info(f"GLOBAL CALLBACK: request={request_code}, result={result_code}")
+                if _app_instance:
+                    _app_instance.on_activity_result(request_code, result_code, intent)
+                else:
+                    Logger.error("GLOBAL CALLBACK: No app instance!")
+            
             class ActivityResultListener(PythonJavaClass):
                 __javainterfaces__ = ['org/kivy/android/PythonActivity$ActivityResultListener']
                 
-                def __init__(self, callback):
+                def __init__(self):
                     super().__init__()
-                    self.callback = callback
-                    Logger.info("ActivityResultListener: Initialized")
+                    Logger.info("ActivityResultListener: Created")
                 
                 @java_method('(IILandroid/content/Intent;)V')
                 def onActivityResult(self, requestCode, resultCode, intent):
-                    Logger.info(f"ActivityResultListener: onActivityResult called - code={requestCode}, result={resultCode}")
-                    self.callback(requestCode, resultCode, intent)
+                    Logger.info(f"ActivityResultListener.onActivityResult: CALLED! request={requestCode}, result={resultCode}")
+                    try:
+                        global_callback(requestCode, resultCode, intent)
+                    except Exception as e:
+                        Logger.error(f"ActivityResultListener: Callback failed: {e}")
+                        import traceback
+                        traceback.print_exc()
             
-            self._activity_result_listener = ActivityResultListener(self.on_activity_result)
-            PythonActivity.mActivity.registerActivityResultListener(self._activity_result_listener)
-            Logger.info("App: Activity result listener registered successfully")
+            self._activity_result_listener = ActivityResultListener()
+            activity = PythonActivity.mActivity
+            activity.registerActivityResultListener(self._activity_result_listener)
+            Logger.info("App: Activity result listener registered")
+            
+            # 验证注册
+            Logger.info(f"App: Listener object: {self._activity_result_listener}")
+            Logger.info(f"App: Activity object: {activity}")
             
         except Exception as e:
             Logger.error(f"App: Failed to setup activity listener: {e}")
@@ -328,72 +384,80 @@ class ItemTrackerApp(App):
     def on_activity_result(self, request_code, result_code, intent):
         """处理 Activity 结果"""
         try:
-            Logger.info(f"App: on_activity_result called")
-            Logger.info(f"App: request_code={request_code}, result_code={result_code}")
+            Logger.info("=" * 50)
+            Logger.info(f"App.on_activity_result: ENTERED")
+            Logger.info(f"App: request_code={request_code}")
+            Logger.info(f"App: result_code={result_code}")
             Logger.info(f"App: intent={intent}")
+            Logger.info("=" * 50)
             
-            if request_code == 1001:  # 相机请求码
+            if request_code == 1001:
                 RESULT_OK = -1
                 if result_code == RESULT_OK:
-                    Logger.info("App: Camera result OK, processing...")
+                    Logger.info("App: Result is OK")
                     
                     if intent is not None:
-                        # 从 Intent 获取缩略图
-                        extras = intent.getExtras()
-                        if extras is not None:
-                            Logger.info("App: Intent has extras")
-                            bitmap = extras.get("data")
-                            if bitmap is not None:
-                                Logger.info("App: Got bitmap from intent")
-                                Clock.schedule_once(lambda dt: self.save_bitmap(bitmap), 0.1)
+                        Logger.info("App: Intent is not None")
+                        try:
+                            extras = intent.getExtras()
+                            Logger.info(f"App: Extras: {extras}")
+                            
+                            if extras is not None:
+                                bitmap = extras.get("data")
+                                Logger.info(f"App: Bitmap: {bitmap}")
+                                
+                                if bitmap is not None:
+                                    Logger.info("App: Got bitmap, scheduling save")
+                                    Clock.schedule_once(lambda dt: self.save_bitmap(bitmap), 0.1)
+                                else:
+                                    Logger.warning("App: Bitmap is None")
+                                    # 尝试创建测试项
+                                    Clock.schedule_once(lambda dt: self.create_test_item(), 0.1)
                             else:
-                                Logger.warning("App: No bitmap in extras")
-                                self.show_message('Error', 'No image data received')
-                        else:
-                            Logger.warning("App: Intent has no extras")
-                            self.show_message('Error', 'No image data received')
+                                Logger.warning("App: Extras is None")
+                                Clock.schedule_once(lambda dt: self.create_test_item(), 0.1)
+                        except Exception as e:
+                            Logger.error(f"App: Error processing intent: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            Clock.schedule_once(lambda dt: self.create_test_item(), 0.1)
                     else:
                         Logger.warning("App: Intent is None")
-                        self.show_message('Error', 'No image data received')
+                        Clock.schedule_once(lambda dt: self.create_test_item(), 0.1)
                 else:
-                    Logger.warning(f"App: Camera cancelled or failed: {result_code}")
-                    self.show_message('Cancelled', 'Photo was cancelled')
+                    Logger.warning(f"App: Result not OK: {result_code}")
+                    Clock.schedule_once(lambda dt: self.show_message('Cancelled', f'Photo cancelled (code: {result_code})'), 0.1)
             else:
                 Logger.warning(f"App: Unknown request code: {request_code}")
                     
         except Exception as e:
-            Logger.error(f"App: Activity result handler failed: {e}")
+            Logger.error(f"App: on_activity_result failed: {e}")
             import traceback
             traceback.print_exc()
-            self.show_message('Error', f'Failed to process photo:\n{str(e)}')
     
     def save_bitmap(self, bitmap):
         """保存 Bitmap 到文件"""
         try:
-            Logger.info("App: Saving bitmap to file")
+            Logger.info("App: save_bitmap called")
             
-            # 生成文件路径
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'item_{timestamp}.jpg'
             filepath = os.path.join(self.images_dir, filename)
             
-            Logger.info(f"App: Saving to: {filepath}")
+            Logger.info(f"App: Saving bitmap to: {filepath}")
             
-            # 将 Bitmap 保存为 JPEG
             output_stream = FileOutputStream(filepath)
             bitmap.compress(CompressFormat.JPEG, 90, output_stream)
             output_stream.flush()
             output_stream.close()
             
-            Logger.info("App: Bitmap saved successfully")
+            Logger.info("App: Bitmap saved")
             
-            # 验证文件
             if os.path.exists(filepath):
                 file_size = os.path.getsize(filepath)
                 Logger.info(f"App: File size: {file_size} bytes")
                 
                 if file_size > 0:
-                    # 保存记录
                     item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
                     timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     
@@ -416,7 +480,7 @@ class ItemTrackerApp(App):
                 self.show_message('Error', 'Failed to save photo')
             
         except Exception as e:
-            Logger.error(f"App: Save bitmap failed: {e}")
+            Logger.error(f"App: save_bitmap failed: {e}")
             import traceback
             traceback.print_exc()
             self.show_message('Error', f'Save failed:\n{str(e)}')
@@ -424,7 +488,7 @@ class ItemTrackerApp(App):
     def take_photo(self, instance):
         """拍照功能"""
         try:
-            Logger.info("App: Take photo button pressed")
+            Logger.info("App: take_photo called")
             
             if platform == 'android':
                 self.take_photo_android()
@@ -432,55 +496,54 @@ class ItemTrackerApp(App):
                 self.create_test_item()
                 
         except Exception as e:
-            Logger.error(f"App: Take photo failed: {e}")
+            Logger.error(f"App: take_photo failed: {e}")
             import traceback
             traceback.print_exc()
-            self.show_message('Error', f'Photo function error:\n{str(e)}')
+            self.show_message('Error', f'Photo error:\n{str(e)}')
     
     def take_photo_android(self):
-        """Android 拍照 - 使用 Intent（获取缩略图）"""
+        """Android 拍照"""
         try:
-            Logger.info("App: Starting Android camera with Intent")
+            Logger.info("App: take_photo_android called")
             
-            # 创建相机 Intent（不指定输出，获取缩略图）
             camera_intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            
-            # 检查是否有相机应用
             context = PythonActivity.mActivity
             package_manager = context.getPackageManager()
             
             if camera_intent.resolveActivity(package_manager) is not None:
-                Logger.info("App: Camera app found, starting activity")
-                # 启动相机
-                PythonActivity.mActivity.startActivityForResult(camera_intent, 1001)
-                Logger.info("App: Camera intent started successfully")
+                Logger.info("App: Starting camera activity")
+                context.startActivityForResult(camera_intent, 1001)
+                Logger.info("App: Camera activity started")
             else:
-                Logger.error("App: No camera app found")
+                Logger.error("App: No camera app")
                 self.show_message('Error', 'No camera app found')
             
         except Exception as e:
-            Logger.error(f"App: Android camera failed: {e}")
+            Logger.error(f"App: take_photo_android failed: {e}")
             import traceback
             traceback.print_exc()
             self.show_message('Error', f'Camera failed:\n{str(e)}')
     
     def create_test_item(self):
-        """创建测试物品（用于桌面测试）"""
+        """创建测试物品"""
         try:
-            Logger.info("App: Creating test item")
+            Logger.info("App: create_test_item called")
             
             item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
             filepath = os.path.join(self.images_dir, f'item_{item_id}.jpg')
             
-            try:
-                from PIL import Image as PILImage
-                img = PILImage.new('RGB', (300, 300), color=(73, 109, 137))
-                img.save(filepath)
-            except:
-                with open(filepath, 'wb') as f:
-                    f.write(b'\xff\xd8\xff\xe0')
+            # 创建简单的 JPEG 文件头
+            with open(filepath, 'wb') as f:
+                # JPEG 文件头
+                f.write(b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00')
+                # 填充一些数据
+                f.write(b'\x00' * 1000)
+                # JPEG 文件尾
+                f.write(b'\xff\xd9')
+            
+            Logger.info(f"App: Test file created: {filepath}")
             
             item = {
                 'id': item_id,
@@ -492,10 +555,10 @@ class ItemTrackerApp(App):
             self.save_data()
             self.display_items()
             self.show_message('Success', 'Test item added!')
-            Logger.info(f"App: Test item created: {item_id}")
+            Logger.info(f"App: Test item saved: {item_id}")
             
         except Exception as e:
-            Logger.error(f"App: Create test item failed: {e}")
+            Logger.error(f"App: create_test_item failed: {e}")
             import traceback
             traceback.print_exc()
             self.show_message('Error', f'Add failed:\n{str(e)}')
@@ -503,7 +566,7 @@ class ItemTrackerApp(App):
     def display_items(self):
         """显示物品列表"""
         try:
-            Logger.info(f"App: Displaying {len(self.items)} items")
+            Logger.info(f"App: display_items called, {len(self.items)} items")
             self.items_layout.clear_widgets()
             
             if not self.items:
@@ -530,15 +593,15 @@ class ItemTrackerApp(App):
                     card = ItemCard(item, self.delete_item)
                     self.items_layout.add_widget(card)
                 except Exception as e:
-                    Logger.error(f"App: Failed to create card for item {item.get('id')}: {e}")
+                    Logger.error(f"App: Failed to create card: {e}")
                     
         except Exception as e:
-            Logger.error(f"App: Display items failed: {e}")
+            Logger.error(f"App: display_items failed: {e}")
     
     def delete_item(self, item_id):
         """删除物品"""
         try:
-            Logger.info(f"App: Deleting item: {item_id}")
+            Logger.info(f"App: delete_item called: {item_id}")
             
             item_to_delete = None
             for item in self.items:
@@ -563,49 +626,49 @@ class ItemTrackerApp(App):
                 Logger.warning(f"App: Item not found: {item_id}")
                 
         except Exception as e:
-            Logger.error(f"App: Delete item failed: {e}")
+            Logger.error(f"App: delete_item failed: {e}")
             self.show_message('Error', f'Delete failed:\n{str(e)}')
     
     def refresh_list(self, instance):
         """刷新列表"""
         try:
-            Logger.info("App: Refreshing list")
+            Logger.info("App: refresh_list called")
             self.load_data()
             self.display_items()
-            self.show_message('Info', 'List refreshed!')
+            self.show_message('Info', f'Refreshed! {len(self.items)} items')
         except Exception as e:
-            Logger.error(f"App: Refresh failed: {e}")
+            Logger.error(f"App: refresh_list failed: {e}")
             self.show_message('Error', f'Refresh failed:\n{str(e)}')
     
     def load_data(self):
         """加载数据"""
         try:
             if os.path.exists(self.data_file):
-                Logger.info(f"App: Loading data from: {self.data_file}")
+                Logger.info(f"App: Loading from: {self.data_file}")
                 with open(self.data_file, 'r', encoding='utf-8') as f:
                     self.items = json.load(f)
                 Logger.info(f"App: Loaded {len(self.items)} items")
             else:
-                Logger.info("App: No data file found, starting fresh")
+                Logger.info("App: No data file")
                 self.items = []
         except Exception as e:
-            Logger.error(f"App: Load data failed: {e}")
+            Logger.error(f"App: load_data failed: {e}")
             self.items = []
     
     def save_data(self):
         """保存数据"""
         try:
-            Logger.info(f"App: Saving {len(self.items)} items to: {self.data_file}")
+            Logger.info(f"App: Saving {len(self.items)} items")
             with open(self.data_file, 'w', encoding='utf-8') as f:
                 json.dump(self.items, f, ensure_ascii=False, indent=2)
-            Logger.info("App: Data saved successfully")
+            Logger.info("App: Data saved")
         except Exception as e:
-            Logger.error(f"App: Save data failed: {e}")
+            Logger.error(f"App: save_data failed: {e}")
     
     def show_message(self, title, message):
-        """显示消息提示"""
+        """显示消息"""
         try:
-            Logger.info(f"App: Showing message - {title}: {message}")
+            Logger.info(f"App: show_message: {title} - {message}")
             
             content = BoxLayout(orientation='vertical', padding=10)
             msg_label = Label(
@@ -635,14 +698,16 @@ class ItemTrackerApp(App):
             popup.open()
             
         except Exception as e:
-            Logger.error(f"App: Show message failed: {e}")
+            Logger.error(f"App: show_message failed: {e}")
 
 
 if __name__ == '__main__':
     try:
-        Logger.info("App: Starting ItemTrackerApp")
+        Logger.info("=" * 50)
+        Logger.info("App: STARTING ItemTrackerApp")
+        Logger.info("=" * 50)
         ItemTrackerApp().run()
     except Exception as e:
-        Logger.error(f"App: Fatal error: {e}")
+        Logger.error(f"App: FATAL ERROR: {e}")
         import traceback
         traceback.print_exc()
