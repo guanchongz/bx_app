@@ -30,7 +30,7 @@ android.gradle_dependencies = androidx.core:core:1.6.0
 android.enable_androidx = True
 
 # 添加 p4a 额外参数
-p4a.extra_args = --android-api=33, --ndk-api=21
+p4a.extra_args = --android-api 33 --ndk-api 21
 
 [buildozer]
 
