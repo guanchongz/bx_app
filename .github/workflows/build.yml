@@ -14,116 +14,135 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup Python
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
-    - name: Setup Java 17
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Install Android SDK Components
-      run: |
-        set -e
-        
-        echo "=== Accepting licenses ==="
-        yes | sdkmanager --licenses || true
-        
-        echo "=== Installing SDK components ==="
-        sdkmanager --install "platforms;android-31" || exit 1
-        sdkmanager --install "build-tools;31.0.0" || exit 1
-        sdkmanager --install "ndk;25.2.9519653" || exit 1
-        
-        echo "=== Verifying installation ==="
-        sdkmanager --list_installed
-        
-        echo "=== Checking platforms directory ==="
-        ls -la $ANDROID_SDK_ROOT/platforms/ || true
-        
-        echo "=== Setting environment variables ==="
-        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-        echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-        echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
-
-    - name: Verify SDK Installation
-      run: |
-        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
-        echo "ANDROID_HOME: $ANDROID_HOME"
-        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
-        
-        if [ ! -d "$ANDROID_SDK_ROOT/platforms/android-31" ]; then
-          echo "ERROR: android-31 platform not found!"
-          exit 1
-        fi
-        
-        echo "✓ android-31 platform verified"
-
-    - name: Maximize build space
+    - name: Free up disk space
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
         sudo rm -rf /usr/local/share/boost
         sudo docker image prune --all --force
-        sudo apt-get clean
+        df -h
 
-    - name: Install System Dependencies
+    - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential git zip unzip ccache \
-          autoconf automake libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev \
-          cmake libffi-dev libssl-dev libltdl-dev python3-dev
+          build-essential git zip unzip openjdk-17-jdk wget \
+          autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
+          libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
+          ccache
         sudo apt-get clean
 
-    - name: Install Python Dependencies
+    - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install buildozer==1.5.0
-        pip install cython==0.29.33
+        pip install --upgrade buildozer==1.5.0 cython==0.29.33
 
-    - name: Cache Buildozer
+    - name: Setup Android SDK manually
+      run: |
+        # 创建 SDK 目录
+        export ANDROID_SDK_ROOT=$HOME/android-sdk
+        mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+        
+        # 下载 command line tools
+        cd $ANDROID_SDK_ROOT/cmdline-tools
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -q commandlinetools-linux-9477386_latest.zip
+        mv cmdline-tools latest
+        
+        # 设置环境变量
+        export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+        
+        # 接受许可
+        yes | sdkmanager --licenses || true
+        
+        # 安装必要组件
+        sdkmanager "platform-tools"
+        sdkmanager "platforms;android-31"
+        sdkmanager "build-tools;31.0.0"
+        sdkmanager "ndk;25.2.9519653"
+        
+        # 验证安装
+        echo "=== Installed packages ==="
+        sdkmanager --list_installed
+        
+        # 保存环境变量
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
+        echo "PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH" >> $GITHUB_ENV
+
+    - name: Verify SDK installation
+      run: |
+        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        ls -la $ANDROID_SDK_ROOT/platforms/
+        
+        if [ ! -d "$ANDROID_SDK_ROOT/platforms/android-31" ]; then
+          echo "ERROR: android-31 not found!"
+          exit 1
+        fi
+        echo "✓ SDK verified"
+
+    - name: Cache Buildozer global directory
+      uses: actions/cache@v4
+      with:
+        path: ~/.buildozer
+        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+
+    - name: Cache Buildozer directory
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-${{ runner.os }}-api31-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          buildozer-${{ runner.os }}-api31-
+        key: buildozer-${{ hashFiles('buildozer.spec') }}
 
-    - name: Build APK
-      env:
-        ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-        ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+    - name: Build with Buildozer
       run: |
-        echo "=== Environment Check ==="
+        # 确保环境变量设置正确
+        export ANDROID_SDK_ROOT=$HOME/android-sdk
+        export ANDROID_HOME=$HOME/android-sdk
+        export ANDROID_NDK_HOME=$HOME/android-sdk/ndk/25.2.9519653
+        export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH
+        
+        # 显示环境信息
+        echo "=== Environment ==="
         echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
         echo "ANDROID_HOME: $ANDROID_HOME"
         echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        echo "Java version:"
+        java -version
+        echo "Python version:"
+        python --version
         
-        echo "=== Starting build ==="
+        # 构建
         buildozer -v android debug
+      env:
+        GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
+      if: success()
       with:
-        name: item-tracker-apk
+        name: android-apk
         path: bin/*.apk
         retention-days: 30
 
-    - name: Upload logs on failure
-      if: failure()
+    - name: Upload build logs
       uses: actions/upload-artifact@v4
+      if: failure()
       with:
         name: build-logs
         path: |
           .buildozer/**/*.log
-          .buildozer/**/logcat.txt
         if-no-files-found: ignore
