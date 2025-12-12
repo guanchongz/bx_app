@@ -139,7 +139,12 @@ jobs:
         echo "ANDROIDAPI: $ANDROIDAPI"
         echo "ANDROIDNDK: $ANDROIDNDK"
         
-        buildozer -v android debug
+        buildozer -v android debug \
+          p4a.source_dir=/tmp/p4a \
+          p4a.local_recipes=./p4a-recipes \
+          android.sdk_path=/usr/local/lib/android/sdk \
+          android.ndk_path=/usr/local/lib/android/sdk/ndk/25.2.9519653 \
+          android.api=33
 
     - name: Check disk space after build
       if: always()
