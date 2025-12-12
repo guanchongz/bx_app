@@ -5,7 +5,7 @@ package.name = itemtracker
 package.domain = org.example
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json
+source.include_exts = py,png,jpg,kv,atlas,json,xml
 
 version = 1.0
 
@@ -31,6 +31,12 @@ android.enable_androidx = True
 
 # 添加 p4a 额外参数
 p4a.extra_args = --android-api 33 --ndk-api 21
+
+# 使用自定义 Manifest 模板
+android.manifest.intent_filters = 
+
+# 指定自定义 manifest
+p4a.manifest_template = templates/AndroidManifest.tmpl.xml
 
 [buildozer]
 
