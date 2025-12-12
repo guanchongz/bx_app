@@ -36,7 +36,7 @@ if platform == 'android':
 if platform == 'android':
     try:
         from android.permissions import request_permissions, Permission
-        from jnius import autoclass, cast
+        from jnius import autoclass, cast, PythonJavaClass, java_method
         
         request_permissions([
             Permission.CAMERA,
@@ -50,8 +50,11 @@ if platform == 'android':
         MediaStore = autoclass('android.provider.MediaStore')
         Uri = autoclass('android.net.Uri')
         File = autoclass('java.io.File')
+        Bitmap = autoclass('android.graphics.Bitmap')
         BitmapFactory = autoclass('android.graphics.BitmapFactory')
         FileOutputStream = autoclass('java.io.FileOutputStream')
+        ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
+        CompressFormat = autoclass('android.graphics.Bitmap$CompressFormat')
         
         Logger.info("App: Android modules loaded successfully")
     except Exception as e:
@@ -298,7 +301,7 @@ class ItemTrackerApp(App):
     def setup_activity_listener(self):
         """设置 Activity 结果监听器"""
         try:
-            from jnius import PythonJavaClass, java_method
+            Logger.info("App: Setting up activity listener")
             
             class ActivityResultListener(PythonJavaClass):
                 __javainterfaces__ = ['org/kivy/android/PythonActivity$ActivityResultListener']
@@ -306,14 +309,16 @@ class ItemTrackerApp(App):
                 def __init__(self, callback):
                     super().__init__()
                     self.callback = callback
+                    Logger.info("ActivityResultListener: Initialized")
                 
                 @java_method('(IILandroid/content/Intent;)V')
                 def onActivityResult(self, requestCode, resultCode, intent):
+                    Logger.info(f"ActivityResultListener: onActivityResult called - code={requestCode}, result={resultCode}")
                     self.callback(requestCode, resultCode, intent)
             
             self._activity_result_listener = ActivityResultListener(self.on_activity_result)
             PythonActivity.mActivity.registerActivityResultListener(self._activity_result_listener)
-            Logger.info("App: Activity result listener registered")
+            Logger.info("App: Activity result listener registered successfully")
             
         except Exception as e:
             Logger.error(f"App: Failed to setup activity listener: {e}")
@@ -323,46 +328,79 @@ class ItemTrackerApp(App):
     def on_activity_result(self, request_code, result_code, intent):
         """处理 Activity 结果"""
         try:
-            Logger.info(f"App: Activity result - code: {request_code}, result: {result_code}")
+            Logger.info(f"App: on_activity_result called")
+            Logger.info(f"App: request_code={request_code}, result_code={result_code}")
+            Logger.info(f"App: intent={intent}")
             
             if request_code == 1001:  # 相机请求码
                 RESULT_OK = -1
                 if result_code == RESULT_OK:
-                    Logger.info("App: Camera result OK")
-                    # 延迟处理，等待文件写入
-                    Clock.schedule_once(lambda dt: self.process_camera_result(), 0.5)
+                    Logger.info("App: Camera result OK, processing...")
+                    
+                    if intent is not None:
+                        # 从 Intent 获取缩略图
+                        extras = intent.getExtras()
+                        if extras is not None:
+                            Logger.info("App: Intent has extras")
+                            bitmap = extras.get("data")
+                            if bitmap is not None:
+                                Logger.info("App: Got bitmap from intent")
+                                Clock.schedule_once(lambda dt: self.save_bitmap(bitmap), 0.1)
+                            else:
+                                Logger.warning("App: No bitmap in extras")
+                                self.show_message('Error', 'No image data received')
+                        else:
+                            Logger.warning("App: Intent has no extras")
+                            self.show_message('Error', 'No image data received')
+                    else:
+                        Logger.warning("App: Intent is None")
+                        self.show_message('Error', 'No image data received')
                 else:
                     Logger.warning(f"App: Camera cancelled or failed: {result_code}")
                     self.show_message('Cancelled', 'Photo was cancelled')
-                    self.current_photo_path = None
+            else:
+                Logger.warning(f"App: Unknown request code: {request_code}")
                     
         except Exception as e:
             Logger.error(f"App: Activity result handler failed: {e}")
             import traceback
             traceback.print_exc()
+            self.show_message('Error', f'Failed to process photo:\n{str(e)}')
     
-    def process_camera_result(self):
-        """处理相机拍照结果"""
+    def save_bitmap(self, bitmap):
+        """保存 Bitmap 到文件"""
         try:
-            if not self.current_photo_path:
-                Logger.warning("App: No photo path set")
-                return
+            Logger.info("App: Saving bitmap to file")
             
-            Logger.info(f"App: Processing camera result: {self.current_photo_path}")
+            # 生成文件路径
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'item_{timestamp}.jpg'
+            filepath = os.path.join(self.images_dir, filename)
             
-            if os.path.exists(self.current_photo_path):
-                file_size = os.path.getsize(self.current_photo_path)
-                Logger.info(f"App: Photo file size: {file_size} bytes")
+            Logger.info(f"App: Saving to: {filepath}")
+            
+            # 将 Bitmap 保存为 JPEG
+            output_stream = FileOutputStream(filepath)
+            bitmap.compress(CompressFormat.JPEG, 90, output_stream)
+            output_stream.flush()
+            output_stream.close()
+            
+            Logger.info("App: Bitmap saved successfully")
+            
+            # 验证文件
+            if os.path.exists(filepath):
+                file_size = os.path.getsize(filepath)
+                Logger.info(f"App: File size: {file_size} bytes")
                 
                 if file_size > 0:
                     # 保存记录
                     item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
-                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     
                     item = {
                         'id': item_id,
-                        'image_path': self.current_photo_path,
-                        'timestamp': timestamp
+                        'image_path': filepath,
+                        'timestamp': timestamp_str
                     }
                     
                     self.items.append(item)
@@ -371,16 +409,14 @@ class ItemTrackerApp(App):
                     self.show_message('Success', 'Item recorded!')
                     Logger.info(f"App: Item saved: {item_id}")
                 else:
-                    Logger.warning("App: Photo file is empty")
+                    Logger.warning("App: File is empty")
                     self.show_message('Error', 'Photo file is empty')
             else:
-                Logger.warning(f"App: Photo file not found: {self.current_photo_path}")
-                self.show_message('Error', 'Photo file not found')
-            
-            self.current_photo_path = None
+                Logger.warning("App: File not created")
+                self.show_message('Error', 'Failed to save photo')
             
         except Exception as e:
-            Logger.error(f"App: Process camera result failed: {e}")
+            Logger.error(f"App: Save bitmap failed: {e}")
             import traceback
             traceback.print_exc()
             self.show_message('Error', f'Save failed:\n{str(e)}')
@@ -402,18 +438,11 @@ class ItemTrackerApp(App):
             self.show_message('Error', f'Photo function error:\n{str(e)}')
     
     def take_photo_android(self):
-        """Android 拍照 - 使用 Intent"""
+        """Android 拍照 - 使用 Intent（获取缩略图）"""
         try:
             Logger.info("App: Starting Android camera with Intent")
             
-            # 生成文件路径
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'item_{timestamp}.jpg'
-            self.current_photo_path = os.path.join(self.images_dir, filename)
-            
-            Logger.info(f"App: Photo will be saved to: {self.current_photo_path}")
-            
-            # 创建相机 Intent（不指定输出路径，使用默认）
+            # 创建相机 Intent（不指定输出，获取缩略图）
             camera_intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             
             # 检查是否有相机应用
@@ -421,9 +450,10 @@ class ItemTrackerApp(App):
             package_manager = context.getPackageManager()
             
             if camera_intent.resolveActivity(package_manager) is not None:
+                Logger.info("App: Camera app found, starting activity")
                 # 启动相机
                 PythonActivity.mActivity.startActivityForResult(camera_intent, 1001)
-                Logger.info("App: Camera intent started")
+                Logger.info("App: Camera intent started successfully")
             else:
                 Logger.error("App: No camera app found")
                 self.show_message('Error', 'No camera app found')
