@@ -28,62 +28,45 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Accept Android SDK Licenses
+    - name: Install Android SDK Components
       run: |
         yes | sdkmanager --licenses || true
-
-    - name: Install Android SDK Components (API 33)
-      run: |
-        echo "=== Installing SDK components ==="
         sdkmanager --install "platforms;android-33"
         sdkmanager --install "build-tools;33.0.2"
         sdkmanager --install "ndk;25.2.9519653"
-        echo "=== Verifying installation ==="
-        sdkmanager --list_installed | grep -E "platforms;android-33|build-tools;33|ndk;25"
-
-    - name: Verify SDK Installation
-      run: |
-        echo "=== SDK directories ==="
-        echo "ANDROID_SDK_ROOT: /usr/local/lib/android/sdk"
+        
+        echo "=== Verifying SDK installation ==="
         ls -la /usr/local/lib/android/sdk/platforms/
         ls -la /usr/local/lib/android/sdk/platforms/android-33/
-        ls -la /usr/local/lib/android/sdk/build-tools/
-        ls -la /usr/local/lib/android/sdk/ndk/
+
+    - name: Create SDK symlink for p4a
+      run: |
+        # p4a 可能在不同位置查找 SDK
+        sudo mkdir -p /opt/android-sdk
+        sudo ln -sf /usr/local/lib/android/sdk/platforms /opt/android-sdk/platforms
+        sudo ln -sf /usr/local/lib/android/sdk/build-tools /opt/android-sdk/build-tools
+        sudo ln -sf /usr/local/lib/android/sdk/ndk /opt/android-sdk/ndk
+        
+        echo "=== Symlinks created ==="
+        ls -la /opt/android-sdk/
 
     - name: Maximize build space
       run: |
-        echo "=== Before cleanup ==="
-        df -h
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
         sudo rm -rf /usr/local/share/boost
         sudo docker image prune --all --force
         sudo apt-get clean
-        echo "=== After cleanup ==="
-        df -h
 
     - name: Install System Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential \
-          git \
-          zip \
-          unzip \
-          ccache \
-          autoconf \
-          automake \
-          libtool \
-          pkg-config \
-          zlib1g-dev \
-          libncurses5-dev \
-          libncursesw5-dev \
-          cmake \
-          libffi-dev \
-          libssl-dev \
-          libltdl-dev \
-          python3-dev
+          build-essential git zip unzip ccache \
+          autoconf automake libtool pkg-config \
+          zlib1g-dev libncurses5-dev libncursesw5-dev \
+          cmake libffi-dev libssl-dev libltdl-dev python3-dev
         sudo apt-get clean
 
     - name: Install Python Dependencies
@@ -92,94 +75,45 @@ jobs:
         pip install buildozer==1.5.0
         pip install cython==0.29.33
 
-    - name: Cache Buildozer directory
+    - name: Cache Buildozer
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-api33-fixed-${{ hashFiles('buildozer.spec') }}-v1
-        restore-keys: |
-          buildozer-api33-fixed-
+        key: buildozer-api33-symlink-${{ hashFiles('buildozer.spec') }}-v1
 
-    - name: Clean old buildozer cache
-      run: |
-        echo "=== Cleaning old cache ==="
-        rm -rf .buildozer/android/platform/build-arm64-v8a
-        echo "=== Cache cleaned ==="
-
-    - name: Set Android SDK environment
-      run: |
-        echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-        echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-        echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653" >> $GITHUB_ENV
-
-    - name: Create buildozer environment file
-      run: |
-        mkdir -p ~/.buildozer
-        cat > ~/.buildozer/config.ini << EOF
-        [buildozer]
-        android.sdk_path = /usr/local/lib/android/sdk
-        android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
-        android.api = 33
-        EOF
-        cat ~/.buildozer/config.ini
-
-    - name: Build APK with explicit SDK path
+    - name: Build APK with explicit paths
       run: |
         export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m"
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653
-        export ANDROIDAPI=33
-        export ANDROIDNDK=/usr/local/lib/android/sdk/ndk/25.2.9519653
         
-        echo "=== Environment variables ==="
+        # 让 p4a 知道 SDK 位置
+        export ANDROIDSDK=/usr/local/lib/android/sdk
+        export ANDROIDNDK=/usr/local/lib/android/sdk/ndk/25.2.9519653
+        export ANDROIDAPI=33
+        export ANDROIDNDKVER=25b
+        
+        echo "=== Environment ==="
         echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
-        echo "ANDROID_HOME: $ANDROID_HOME"
-        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        echo "ANDROIDSDK: $ANDROIDSDK"
         echo "ANDROIDAPI: $ANDROIDAPI"
         echo "ANDROIDNDK: $ANDROIDNDK"
         
-        buildozer -v android debug \
-          p4a.source_dir=/tmp/p4a \
-          p4a.local_recipes=./p4a-recipes \
-          android.sdk_path=/usr/local/lib/android/sdk \
-          android.ndk_path=/usr/local/lib/android/sdk/ndk/25.2.9519653 \
-          android.api=33
-
-    - name: Check disk space after build
-      if: always()
-      run: df -h
-
-    - name: List build output
-      if: always()
-      run: |
-        echo "=== Build output ==="
-        ls -lh bin/ || echo "No bin directory"
+        buildozer -v android debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: item-tracker-apk
         path: bin/*.apk
-        if-no-files-found: error
         retention-days: 30
 
-    - name: Upload build logs on failure
+    - name: Upload logs on failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: buildozer-logs
+        name: build-logs
         path: |
-          .buildozer/android/platform/build-*/build.log
-          .buildozer/android/platform/build-*/dists/*/build.log
+          .buildozer/**/*.log
         if-no-files-found: ignore
-        retention-days: 7
-
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: bin/*.apk
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
