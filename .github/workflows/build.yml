@@ -27,23 +27,35 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      with:
+        api-level: 33
+        build-tools-version: 33.0.2
+        ndk-version: 25.2.9519653
 
-    - name: Install Android SDK API 33 and NDK
+    - name: Accept Android SDK Licenses
       run: |
-        echo "=== Installing Android SDK components ==="
-        sdkmanager --list | grep -E "platforms|build-tools|ndk" | head -20
-        echo "=== Installing required components ==="
         yes | sdkmanager --licenses || true
+
+    - name: Install Android SDK Components
+      run: |
+        echo "=== Installing SDK components ==="
         sdkmanager --install "platforms;android-33"
         sdkmanager --install "build-tools;33.0.2"
         sdkmanager --install "ndk;25.2.9519653"
-        echo "=== Installed components ==="
+        echo "=== Verifying installation ==="
         sdkmanager --list_installed
-        echo "=== SDK location ==="
+        echo "=== SDK Root ==="
         echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
         echo "ANDROID_HOME: $ANDROID_HOME"
-        ls -la $ANDROID_SDK_ROOT/platforms/ || true
-        ls -la $ANDROID_SDK_ROOT/ndk/ || true
+        ls -la $ANDROID_SDK_ROOT/platforms/ || echo "No platforms directory"
+        ls -la $ANDROID_SDK_ROOT/ndk/ || echo "No ndk directory"
+
+    - name: Set Android Environment Variables
+      run: |
+        echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+        echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+        echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653" >> $GITHUB_ENV
+
 
     - name: Maximize build space
       run: |
