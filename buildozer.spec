@@ -20,6 +20,10 @@ android.minapi = 21
 android.ndk = 25b
 android.accept_sdk_license = True
 
+# 明确指定 SDK 路径
+android.sdk_path = /usr/local/lib/android/sdk
+android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
+
 orientation = portrait
 fullscreen = 0
 
