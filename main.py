@@ -32,31 +32,18 @@ if platform == 'android':
             except Exception as e:
                 Logger.warning(f"App: Failed to register font {font_path}: {e}")
 
-# Android 权限和导入
+# Android 权限
 if platform == 'android':
     try:
-        from android.permissions import request_permissions, Permission, check_permission
-        from jnius import autoclass, cast
-        
-        # 请求权限
+        from android.permissions import request_permissions, Permission
         request_permissions([
             Permission.CAMERA,
             Permission.WRITE_EXTERNAL_STORAGE,
             Permission.READ_EXTERNAL_STORAGE
         ])
-        
-        # Android 类
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        Intent = autoclass('android.content.Intent')
-        MediaStore = autoclass('android.provider.MediaStore')
-        Uri = autoclass('android.net.Uri')
-        File = autoclass('java.io.File')
-        FileProvider = autoclass('androidx.core.content.FileProvider')
-        Environment = autoclass('android.os.Environment')
-        
-        Logger.info("App: Android modules loaded successfully")
+        Logger.info("App: Android permissions requested")
     except Exception as e:
-        Logger.error(f"App: Failed to load Android modules: {e}")
+        Logger.error(f"App: Permission request failed: {e}")
 
 
 class ItemCard(BoxLayout):
@@ -87,10 +74,10 @@ class ItemCard(BoxLayout):
                 Logger.info(f"ItemCard: Image loaded successfully")
             else:
                 Logger.warning(f"ItemCard: Image file not found: {image_path}")
-                img = Label(text='No Image', size_hint_x=0.3)
+                img = Label(text='No Image', size_hint_x=0.3, font_name='Roboto')
         except Exception as e:
             Logger.error(f"ItemCard: Failed to load image: {e}")
-            img = Label(text='Error', size_hint_x=0.3)
+            img = Label(text='Error', size_hint_x=0.3, font_name='Roboto')
         
         self.add_widget(img)
         
@@ -238,6 +225,8 @@ class ItemTrackerApp(App):
             
         except Exception as e:
             Logger.error(f"App: Failed to build UI: {e}")
+            import traceback
+            traceback.print_exc()
             error_layout = BoxLayout(orientation='vertical', padding=20)
             error_label = Label(
                 text=f'App startup failed:\n{str(e)}',
@@ -256,31 +245,39 @@ class ItemTrackerApp(App):
             
             if platform == 'android':
                 try:
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
                     context = PythonActivity.mActivity
                     
-                    # 使用应用专属的外部文件目录
+                    # 使用应用专属的外部文件目录（不需要权限）
                     files_dir = context.getExternalFilesDir(None)
                     if files_dir:
                         self.data_dir = files_dir.getAbsolutePath()
+                        Logger.info(f"App: Using external files dir: {self.data_dir}")
                     else:
+                        # 备用：使用内部存储
                         files_dir = context.getFilesDir()
                         self.data_dir = files_dir.getAbsolutePath()
-                    
-                    Logger.info(f"App: Using storage dir: {self.data_dir}")
+                        Logger.info(f"App: Using internal files dir: {self.data_dir}")
                     
                 except Exception as e:
                     Logger.error(f"App: Failed to get Android storage: {e}")
                     from android.storage import app_storage_path
                     self.data_dir = app_storage_path()
+                    Logger.info(f"App: Using app_storage_path: {self.data_dir}")
             else:
                 self.data_dir = os.path.dirname(os.path.abspath(__file__))
+                Logger.info(f"App: Using desktop storage: {self.data_dir}")
             
+            # 确保目录存在
             if not os.path.exists(self.data_dir):
                 os.makedirs(self.data_dir)
+                Logger.info(f"App: Created directory: {self.data_dir}")
             
             self.data_file = os.path.join(self.data_dir, 'items_data.json')
             self.images_dir = self.data_dir
             
+            Logger.info(f"App: Storage setup complete")
             Logger.info(f"App: Data file: {self.data_file}")
             Logger.info(f"App: Images dir: {self.images_dir}")
             
@@ -306,7 +303,7 @@ class ItemTrackerApp(App):
             self.show_message('Error', f'Photo function error:\n{str(e)}')
     
     def take_photo_android(self):
-        """Android 原生相机"""
+        """Android 拍照 - 简化版"""
         try:
             Logger.info("App: Starting Android camera")
             
@@ -317,37 +314,18 @@ class ItemTrackerApp(App):
             
             Logger.info(f"App: Photo will be saved to: {self.current_photo_path}")
             
-            # 创建文件
-            photo_file = File(self.current_photo_path)
+            # 确保目录存在
+            os.makedirs(os.path.dirname(self.current_photo_path), exist_ok=True)
             
-            # 获取 FileProvider URI
-            context = PythonActivity.mActivity
-            authority = context.getPackageName() + ".fileprovider"
+            # 使用 plyer camera
+            from plyer import camera
             
-            try:
-                photo_uri = FileProvider.getUriForFile(context, authority, photo_file)
-                Logger.info(f"App: Photo URI: {photo_uri.toString()}")
-            except Exception as e:
-                Logger.error(f"App: FileProvider failed: {e}")
-                # 备用方案：使用 file:// URI（可能在新版本 Android 上不工作）
-                photo_uri = Uri.fromFile(photo_file)
-                Logger.info(f"App: Using file URI: {photo_uri.toString()}")
+            camera.take_picture(
+                filename=self.current_photo_path,
+                on_complete=self.on_photo_complete_callback
+            )
             
-            # 创建相机 Intent
-            camera_intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            camera_intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
-            
-            # 授予临时权限
-            camera_intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            camera_intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            
-            # 启动相机
-            PythonActivity.mActivity.startActivityForResult(camera_intent, 1001)
-            
-            Logger.info("App: Camera intent started")
-            
-            # 定期检查照片是否已保存
-            Clock.schedule_interval(self.check_photo_saved, 1.0)
+            Logger.info("App: Camera started")
             
         except Exception as e:
             Logger.error(f"App: Android camera failed: {e}")
@@ -355,71 +333,68 @@ class ItemTrackerApp(App):
             traceback.print_exc()
             self.show_message('Error', f'Camera failed:\n{str(e)}')
     
-    def check_photo_saved(self, dt):
-        """检查照片是否已保存"""
-        try:
-            if self.current_photo_path and os.path.exists(self.current_photo_path):
-                file_size = os.path.getsize(self.current_photo_path)
-                Logger.info(f"App: Photo file found, size: {file_size} bytes")
-                
-                if file_size > 0:
-                    # 照片已保存
-                    Clock.unschedule(self.check_photo_saved)
-                    self.on_photo_complete(self.current_photo_path)
-                    return False
-            
-            # 超时检查（30秒）
-            if not hasattr(self, '_photo_check_count'):
-                self._photo_check_count = 0
-            
-            self._photo_check_count += 1
-            if self._photo_check_count > 30:
-                Logger.warning("App: Photo check timeout")
-                Clock.unschedule(self.check_photo_saved)
-                self._photo_check_count = 0
-                return False
-                
-        except Exception as e:
-            Logger.error(f"App: Check photo failed: {e}")
-            Clock.unschedule(self.check_photo_saved)
-            return False
-    
-    def on_photo_complete(self, filepath):
+    def on_photo_complete_callback(self, filepath):
         """拍照完成回调"""
         try:
-            Logger.info(f"App: Photo complete: {filepath}")
+            Logger.info(f"App: Photo callback received: {filepath}")
             
-            if filepath and os.path.exists(filepath):
-                file_size = os.path.getsize(filepath)
-                Logger.info(f"App: Photo file size: {file_size} bytes")
-                
-                if file_size > 0:
-                    item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
-                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    
-                    item = {
-                        'id': item_id,
-                        'image_path': filepath,
-                        'timestamp': timestamp
-                    }
-                    
-                    self.items.append(item)
-                    self.save_data()
-                    self.display_items()
-                    self.show_message('Success', 'Item recorded!')
-                    Logger.info(f"App: Item saved: {item_id}")
-                else:
-                    Logger.warning(f"App: Photo file is empty")
-                    self.show_message('Error', 'Photo file is empty')
-            else:
-                Logger.warning(f"App: Photo file not found: {filepath}")
-                self.show_message('Cancelled', 'Photo was cancelled')
+            # 延迟验证，等待文件写入完成
+            Clock.schedule_once(lambda dt: self.verify_and_save_photo(filepath), 1.0)
             
-            self.current_photo_path = None
-            self._photo_check_count = 0
-                
         except Exception as e:
-            Logger.error(f"App: Photo complete failed: {e}")
+            Logger.error(f"App: Photo callback failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def verify_and_save_photo(self, filepath):
+        """验证并保存照片"""
+        try:
+            Logger.info(f"App: Verifying photo: {filepath}")
+            
+            if not filepath:
+                Logger.warning("App: No filepath provided")
+                self.show_message('Cancelled', 'Photo was cancelled')
+                return
+            
+            # 检查文件是否存在
+            if not os.path.exists(filepath):
+                Logger.warning(f"App: Photo file not found: {filepath}")
+                
+                # 尝试使用预设路径
+                if self.current_photo_path and os.path.exists(self.current_photo_path):
+                    Logger.info(f"App: Using preset path: {self.current_photo_path}")
+                    filepath = self.current_photo_path
+                else:
+                    self.show_message('Error', 'Photo file not found')
+                    return
+            
+            # 检查文件大小
+            file_size = os.path.getsize(filepath)
+            Logger.info(f"App: Photo file size: {file_size} bytes")
+            
+            if file_size == 0:
+                Logger.warning("App: Photo file is empty")
+                self.show_message('Error', 'Photo file is empty')
+                return
+            
+            # 保存记录
+            item_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            item = {
+                'id': item_id,
+                'image_path': filepath,
+                'timestamp': timestamp
+            }
+            
+            self.items.append(item)
+            self.save_data()
+            self.display_items()
+            self.show_message('Success', 'Item recorded!')
+            Logger.info(f"App: Item saved successfully: {item_id}")
+            
+        except Exception as e:
+            Logger.error(f"App: Verify photo failed: {e}")
             import traceback
             traceback.print_exc()
             self.show_message('Error', f'Save failed:\n{str(e)}')
@@ -434,13 +409,17 @@ class ItemTrackerApp(App):
             
             filepath = os.path.join(self.images_dir, f'item_{item_id}.jpg')
             
+            # 创建占位图片
             try:
                 from PIL import Image as PILImage
                 img = PILImage.new('RGB', (300, 300), color=(73, 109, 137))
                 img.save(filepath)
+                Logger.info(f"App: Created test image with PIL")
             except:
+                # 如果 PIL 不可用，创建空文件
                 with open(filepath, 'wb') as f:
-                    f.write(b'')
+                    f.write(b'\xff\xd8\xff\xe0')  # JPEG header
+                Logger.info(f"App: Created test image placeholder")
             
             item = {
                 'id': item_id,
@@ -456,6 +435,8 @@ class ItemTrackerApp(App):
             
         except Exception as e:
             Logger.error(f"App: Create test item failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.show_message('Error', f'Add failed:\n{str(e)}')
     
     def display_items(self):
@@ -477,6 +458,7 @@ class ItemTrackerApp(App):
                 self.items_layout.add_widget(empty_label)
                 return
             
+            # 按时间倒序排序
             sorted_items = sorted(
                 self.items,
                 key=lambda x: x.get('timestamp', ''),
@@ -492,6 +474,8 @@ class ItemTrackerApp(App):
                     
         except Exception as e:
             Logger.error(f"App: Display items failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     def delete_item(self, item_id):
         """删除物品"""
@@ -505,6 +489,7 @@ class ItemTrackerApp(App):
                     break
             
             if item_to_delete:
+                # 删除图片文件
                 image_path = item_to_delete.get('image_path')
                 if image_path and os.path.exists(image_path):
                     try:
@@ -513,15 +498,19 @@ class ItemTrackerApp(App):
                     except Exception as e:
                         Logger.error(f"App: Failed to delete image: {e}")
                 
+                # 从列表中移除
                 self.items.remove(item_to_delete)
                 self.save_data()
                 self.display_items()
                 self.show_message('Success', 'Item deleted!')
+                Logger.info(f"App: Item deleted successfully: {item_id}")
             else:
                 Logger.warning(f"App: Item not found: {item_id}")
                 
         except Exception as e:
             Logger.error(f"App: Delete item failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.show_message('Error', f'Delete failed:\n{str(e)}')
     
     def refresh_list(self, instance):
@@ -533,6 +522,8 @@ class ItemTrackerApp(App):
             self.show_message('Info', 'List refreshed!')
         except Exception as e:
             Logger.error(f"App: Refresh failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.show_message('Error', f'Refresh failed:\n{str(e)}')
     
     def load_data(self):
@@ -548,6 +539,8 @@ class ItemTrackerApp(App):
                 self.items = []
         except Exception as e:
             Logger.error(f"App: Load data failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.items = []
     
     def save_data(self):
@@ -559,6 +552,8 @@ class ItemTrackerApp(App):
             Logger.info("App: Data saved successfully")
         except Exception as e:
             Logger.error(f"App: Save data failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     def show_message(self, title, message):
         """显示消息提示"""

@@ -33,10 +33,10 @@ android.enable_androidx = True
 p4a.extra_args = --android-api 33 --ndk-api 21
 
 # 使用自定义 Manifest 模板
-android.manifest.intent_filters = 
+#android.manifest.intent_filters = 
 
 # 指定自定义 manifest
-p4a.manifest_template = templates/AndroidManifest.tmpl.xml
+#p4a.manifest_template = templates/AndroidManifest.tmpl.xml
 
 [buildozer]
 
