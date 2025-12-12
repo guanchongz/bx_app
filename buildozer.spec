@@ -5,7 +5,7 @@ package.name = itemtracker
 package.domain = org.example
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json
+source.include_exts = py,png,jpg,kv,atlas,json,jpeg
 
 version = 1.0
 
