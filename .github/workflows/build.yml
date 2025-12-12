@@ -31,24 +31,12 @@ jobs:
     - name: Install Android SDK Components
       run: |
         yes | sdkmanager --licenses || true
-        sdkmanager --install "platforms;android-33"
-        sdkmanager --install "build-tools;33.0.2"
+        sdkmanager --install "platforms;android-31"
+        sdkmanager --install "build-tools;31.0.0"
         sdkmanager --install "ndk;25.2.9519653"
         
-        echo "=== Verifying SDK installation ==="
-        ls -la /usr/local/lib/android/sdk/platforms/
-        ls -la /usr/local/lib/android/sdk/platforms/android-33/
-
-    - name: Create SDK symlink for p4a
-      run: |
-        # p4a 可能在不同位置查找 SDK
-        sudo mkdir -p /opt/android-sdk
-        sudo ln -sf /usr/local/lib/android/sdk/platforms /opt/android-sdk/platforms
-        sudo ln -sf /usr/local/lib/android/sdk/build-tools /opt/android-sdk/build-tools
-        sudo ln -sf /usr/local/lib/android/sdk/ndk /opt/android-sdk/ndk
-        
-        echo "=== Symlinks created ==="
-        ls -la /opt/android-sdk/
+        echo "=== Installed SDK components ==="
+        sdkmanager --list_installed
 
     - name: Maximize build space
       run: |
@@ -79,26 +67,14 @@ jobs:
       uses: actions/cache@v4
       with:
         path: .buildozer
-        key: buildozer-api33-symlink-${{ hashFiles('buildozer.spec') }}-v1
+        key: buildozer-api31-intent-${{ hashFiles('buildozer.spec') }}
 
-    - name: Build APK with explicit paths
+    - name: Build APK
       run: |
         export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m"
         export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
         export ANDROID_HOME=/usr/local/lib/android/sdk
         export ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653
-        
-        # 让 p4a 知道 SDK 位置
-        export ANDROIDSDK=/usr/local/lib/android/sdk
-        export ANDROIDNDK=/usr/local/lib/android/sdk/ndk/25.2.9519653
-        export ANDROIDAPI=33
-        export ANDROIDNDKVER=25b
-        
-        echo "=== Environment ==="
-        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
-        echo "ANDROIDSDK: $ANDROIDSDK"
-        echo "ANDROIDAPI: $ANDROIDAPI"
-        echo "ANDROIDNDK: $ANDROIDNDK"
         
         buildozer -v android debug
 
@@ -114,6 +90,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: build-logs
-        path: |
-          .buildozer/**/*.log
+        path: .buildozer/**/*.log
         if-no-files-found: ignore
