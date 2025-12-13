@@ -1,4 +1,4 @@
-kivy==2.3.0
+kivy==2.1.0
 plyer==2.1.0
-kivymd==1.2.0
-Pillow==10.1.0
+pyjnius==1.5.0
+android==1.0
